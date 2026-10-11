@@ -1,5 +1,3 @@
-import { Send } from "lucide-react";
-
 function Header() {
     return (
         <header className=" bg-white flex items-center px-5 py-3 gap-3">
