@@ -21,7 +21,7 @@ function FileUpload({ file, setFile, setCount, count }) {
 
             const emailList = emails.map((row) => String(row[0] || "").trim())
 
-            await axios.post("http://localhost:5000/emaillist", { emailList: emailList })
+            await axios.post("https://bulk-mail-mwfn.onrender.com/emaillist", { emailList: emailList })
                 .then((data) => {
                     setCount(data.data.count)
                 })

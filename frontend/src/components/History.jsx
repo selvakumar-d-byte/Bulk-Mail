@@ -15,9 +15,7 @@ function History({ refreshKey }) {
                 setLoading(true);
                 setError("");
 
-                const response = await axios.get(
-                    "http://localhost:5000/history"
-                );
+                const response = await axios.get("https://bulk-mail-mwfn.onrender.com/history");
 
                 if (active) {
                     setHistory(response.data);

@@ -20,7 +20,7 @@ function Email({file, setSent, setFailed}) {
 
         setStatus(true)
 
-        axios.post('http://localhost:5000/sendemail', { subject: subject, message: message })
+        axios.post('https://bulk-mail-mwfn.onrender.com/sendemail', { subject: subject, message: message })
             .then((data) => {
                 alert('Email sent successfully')
                 setSent(data.data.sent)
