@@ -48,6 +48,7 @@ function FileUpload({ file, setFile, setCount, count }) {
                 <label htmlFor="excelFile" className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-6 py-2.5 rounded-lg cursor-pointer transition duration-200 shadow-sm" > <i className="fa-regular fa-folder-open mr-2"></i> Choose File </label>
                 <input onChange={handleFile} id="excelFile" type="file" className="bg-blue-600 text-white hidden" accept=".xlsx,.xls" />
                 <p className="text-gray-500 text-sm md:text-base">supported formets: xlsx, xls</p>
+                <p>Note: File should contain Emails in 1st column of the excel file</p>
 
                 {file && (
                     <div className="border border-gray-400 w-full rounded-lg px-3 py-4 sm:flex justify-between items-center text-center ">

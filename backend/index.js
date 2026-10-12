@@ -1,79 +1,67 @@
 
-const express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
-const { google } = require("googleapis");
-require("dotenv").config();
+const express = require('express')
+const mongoose = require('mongoose')
+const cors = require("cors")
+const { google } = require("googleapis")
+require('dotenv').config()
 
-const app = express();
-const PORT = process.env.PORT || 5000;
+const dns = require("node:dns")
+dns.setServers(["8.8.8.8", "1.1.1.1"])
 
-app.use(cors());
-app.use(express.json({ limit: "1mb" }));
+const app = express()
 
-// Google OAuth2 configuration
+app.use(cors())
+app.use(express.json())
+
+// Gmail API + Google OAuth 2.0
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET
-);
+)
 
 oauth2Client.setCredentials({
     refresh_token: process.env.GOOGLE_REFRESH_TOKEN
-});
+})
 
-// Gmail API client
 const gmail = google.gmail({
     version: "v1",
     auth: oauth2Client
-});
+})
 
-// Sender Gmail address
-const GMAIL_USER = process.env.GMAIL_USER || process.env.user;
+const GMAIL_USER = process.env.GMAIL_USER || process.env.user
 
 // Email History Model
-const EmailHistory = mongoose.model(
-    "EmailHistory",
-    {
-        subject: String,
-        message: String,
-        recipients: [
-            {
-                email: String,
-                status: String,
-                error: String
-            }
-        ],
-        totalReceivers: Number,
-        sent: Number,
-        failed: Number,
-        createdAt: {
-            type: Date,
-            default: Date.now
+const EmailHistory = mongoose.model('EmailHistory', {
+    subject: String,
+    message: String,
+    recipients: [
+        {
+            email: String,
+            status: String,
+            error: String
         }
-    },
-    "EmailHistory"
-);
+    ],
+    totalReceivers: Number,
+    sent: Number,
+    failed: Number,
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+}, 'EmailHistory')
 
 // Store uploaded email list
-let getEmailList = [];
-
-// Validate email address
-function isValidEmail(email) {
-    return (
-        typeof email === "string" &&
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-    );
-}
+let getEmailList = []
 
 // Send email using Gmail API
 async function sendGmail(to, subject, message) {
     const encodedSubject = Buffer
         .from(subject, "utf8")
-        .toString("base64");
+        .toString("base64")
 
     const encodedBody = Buffer
         .from(message, "utf8")
-        .toString("base64");
+        .toString("base64")
 
     const mimeMessage = [
         `From: ${GMAIL_USER}`,
@@ -84,71 +72,47 @@ async function sendGmail(to, subject, message) {
         "Content-Transfer-Encoding: base64",
         "",
         encodedBody
-    ].join("\r\n");
+    ].join("\r\n")
 
     const raw = Buffer
         .from(mimeMessage, "utf8")
-        .toString("base64url");
+        .toString("base64url")
 
     await gmail.users.messages.send({
         userId: "me",
         requestBody: { raw }
-    });
+    })
 }
 
-// Health check
-app.get("/", function (req, res) {
+// Receive email list
+app.post('/emaillist', function (req, res) {
+    const emailList = req.body.emailList
+
+    if (!Array.isArray(emailList)) {
+        return res.status(400).json({
+            success: false,
+            message: "Invalid email list"
+        })
+    }
+
+    getEmailList = emailList
+
     res.json({
         success: true,
-        message: "BulkMail backend is running"
-    });
-});
-
-// Receive email list
-app.post("/emaillist", function (req, res) {
-    const emailList = req.body.emailList;
-
-    if (
-        !Array.isArray(emailList) ||
-        emailList.length === 0
-    ) {
-        return res.status(400).json({
-            success: false,
-            message: "Please upload a valid email list"
-        });
-    }
-
-    getEmailList = [
-        ...new Set(
-            emailList
-                .filter(isValidEmail)
-                .map(email => email.trim())
-        )
-    ];
-
-    if (getEmailList.length === 0) {
-        return res.status(400).json({
-            success: false,
-            message: "No valid email addresses found"
-        });
-    }
-
-    return res.json({
-        success: true,
         count: getEmailList.length
-    });
-});
+    })
+})
 
 // Send bulk emails and save history
-app.post("/sendemail", async function (req, res) {
-    const subject = req.body.subject;
-    const message = req.body.message;
+app.post('/sendemail', async function (req, res) {
+    const subject = req.body.subject
+    const message = req.body.message
 
     if (getEmailList.length === 0) {
         return res.status(400).json({
             success: false,
             message: "Upload the email list first"
-        });
+        })
     }
 
     if (
@@ -160,140 +124,115 @@ app.post("/sendemail", async function (req, res) {
         return res.status(400).json({
             success: false,
             message: "Please enter subject and message"
-        });
+        })
     }
 
-    if (!GMAIL_USER) {
-        return res.status(500).json({
-            success: false,
-            message: "GMAIL_USER is not configured"
-        });
-    }
+    let sent = 0
+    let failed = 0
+    const recipients = []
 
-    const emailList = [...getEmailList];
-    getEmailList = [];
-
-    let sent = 0;
-    let failed = 0;
-    const recipients = [];
-
-    for (const email of emailList) {
+    for (const email of getEmailList) {
         try {
             await sendGmail(
                 email,
                 subject.trim(),
                 message
-            );
+            )
 
-            sent++;
+            sent++
 
             recipients.push({
-                email,
+                email: email,
                 status: "Sent"
-            });
+            })
+
         } catch (error) {
-            failed++;
+            failed++
 
             recipients.push({
-                email,
+                email: email,
                 status: "Failed",
                 error: error.message
-            });
+            })
 
-            console.error(
-                `Gmail API failed for ${email}:`,
-                error.message
-            );
+            console.error(`Email failed for ${email}:`, error.message)
         }
     }
 
     try {
         const savedHistory = await EmailHistory.create({
             subject: subject.trim(),
-            message,
-            recipients,
+            message: message,
+            recipients: recipients,
             totalReceivers: recipients.length,
-            sent,
-            failed
-        });
+            sent: sent,
+            failed: failed
+        })
 
         return res.json({
             success: failed === 0,
             message: "Email process completed",
-            sent,
-            failed,
+            sent: sent,
+            failed: failed,
             historyId: savedHistory._id
-        });
+        })
+
     } catch (error) {
-        console.error(
-            "History save failed:",
-            error.message
-        );
+        console.error("History save failed:", error.message)
 
         return res.status(500).json({
             success: false,
             message: "Emails processed, but history could not be saved",
-            sent,
-            failed
-        });
+            sent: sent,
+            failed: failed
+        })
     }
-});
+})
 
 // Get email history
-app.get("/history", async function (req, res) {
+app.get('/history', async function (req, res) {
     try {
         const history = await EmailHistory
             .find()
             .sort({ createdAt: -1 })
-            .lean();
+            .lean()
 
-        return res.json(history);
+        res.json(history)
+
     } catch (error) {
-        console.error(
-            "History fetch failed:",
-            error.message
-        );
+        console.error("History fetch failed:", error.message)
 
-        return res.status(500).json({
+        res.status(500).json({
             success: false,
             message: "Failed to fetch email history"
-        });
+        })
     }
-});
+})
 
-// Connect MongoDB and start server
-async function startServer() {
-    const MONGODB_URI = process.env.MongoDB_URL;
+// Connect MongoDB
+const MONGODB_URI = process.env.MongoDB_URL
 
-    if (
-        !MONGODB_URI ||
-        !process.env.GOOGLE_CLIENT_ID ||
-        !process.env.GOOGLE_CLIENT_SECRET ||
-        !process.env.GOOGLE_REFRESH_TOKEN
-    ) {
-        console.error(
-            "Required environment variables are missing"
-        );
-        process.exit(1);
-    }
-
-    try {
-        await mongoose.connect(MONGODB_URI, {
-            serverSelectionTimeoutMS: 10000
-        });
-
-        console.log("MongoDB connected successfully");
-
-        app.listen(PORT, function () {
-            console.log(`Server started on port ${PORT}`);
-        });
-    } catch (error) {
-        console.error(
-            "Backend startup failed:",
-            error.message
-        );
-        process.exit(1);
-    }
+if (
+    !MONGODB_URI ||
+    !process.env.GOOGLE_CLIENT_ID ||
+    !process.env.GOOGLE_CLIENT_SECRET ||
+    !process.env.GOOGLE_REFRESH_TOKEN ||
+    !GMAIL_USER
+) {
+    console.error("Required environment variables are missing")
+    process.exit(1)
 }
 
-startServer();
+mongoose.connect(MONGODB_URI, {
+    serverSelectionTimeoutMS: 10000
+})
+.then(() => {
+    console.log("MongoDB connected successfully")
+
+    app.listen(process.env.PORT || 5000, function () {
+        console.log(`Server started on port ${process.env.PORT || 5000}`)
+    })
+})
+.catch((error) => {
+    console.error("MongoDB connection failed:", error.message)
+})
